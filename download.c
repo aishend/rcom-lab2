@@ -26,16 +26,15 @@ struct URL {
 };
 
 // ftp://[<user>:<password>@]<host>/<url-path>
-// devolve 0 se o url for valido, -1 se nao
 int parseUrl(const char *input, struct URL *url) {
-    // assim nenhum campo passa do MAX_SIZE
+    // se for maior que MAX_SIZE nao cabe nos campos
     if (strlen(input) >= MAX_SIZE)
         return -1;
 
     if (strncmp(input, "ftp://", 6) != 0)
         return -1;
 
-    // antes da primeira / fica [<user>:<password>@]<host>, depois fica o caminho
+    // tiramos o ftp:// e cortamos na primeira /, o que vem depois e o caminho
     char server[MAX_SIZE];
     strcpy(server, input + 6);
     char *slash = strchr(server, '/');
@@ -44,7 +43,7 @@ int parseUrl(const char *input, struct URL *url) {
     *slash = '\0';
     strcpy(url->path, slash + 1);
 
-    // sem @ e modo anonimo
+    // se nao tiver @ entramos como anonymous
     char *at = strrchr(server, '@');
     if (at == NULL) {
         strcpy(url->user, "anonymous");
@@ -61,7 +60,7 @@ int parseUrl(const char *input, struct URL *url) {
         strcpy(url->host, at + 1);
     }
 
-    // o ficheiro e guardado com o nome que vem depois da ultima /
+    // o nome do ficheiro e o que esta depois da ultima /
     char *name = strrchr(url->path, '/');
     strcpy(url->filename, name == NULL ? url->path : name + 1);
 
@@ -71,7 +70,7 @@ int parseUrl(const char *input, struct URL *url) {
     return 0;
 }
 
-// do getip.c - descobre o ip do host pelo nome (DNS)
+// igual ao getip.c mas guarda o ip em vez de imprimir
 int getIp(const char *host, char *ip) {
     struct hostent *h;
 
@@ -84,8 +83,7 @@ int getIp(const char *host, char *ip) {
     return 0;
 }
 
-// do clientTCP.c - abre um socket TCP e liga ao servidor
-// devolve o descritor do socket
+// do clientTCP.c, devolve o socket ja ligado ao servidor
 int connectSocket(const char *ip, int port) {
     int sockfd;
     struct sockaddr_in server_addr;
@@ -112,7 +110,7 @@ int connectSocket(const char *ip, int port) {
     return sockfd;
 }
 
-// le uma linha da ligacao de controlo, um byte de cada vez ate ao \n
+// le byte a byte ate ao \n
 int readLine(int sockfd, char *line) {
     int i = 0;
     char c;
@@ -127,27 +125,21 @@ int readLine(int sockfd, char *line) {
     return i;
 }
 
-// a ultima linha de uma resposta tem o codigo seguido de espaco, ex: "220 Welcome"
-// as outras linhas de uma resposta multi-linha sao do tipo "220-Welcome"
-int isLastLine(const char *line) {
-    return strlen(line) >= 4 && isdigit(line[0]) && isdigit(line[1]) && isdigit(line[2]) && line[3] == ' ';
-}
-
-// le a resposta toda do servidor e devolve o codigo
-// em response fica a ultima linha (precisamos dela no PASV)
+// le a resposta do servidor e devolve o codigo, em response fica a ultima linha
 int readResponse(int sockfd, char *response) {
+    // as respostas com varias linhas comecam com "220-" e acabam quando aparece "220 "
     do {
         if (readLine(sockfd, response) < 0) {
             printf("Error: connection closed by the server\n");
             return -1;
         }
         printf("%s", response);
-    } while (!isLastLine(response));
+    } while (!isdigit(response[0]) || response[3] != ' ');
 
     return atoi(response);
 }
 
-// envia "COMANDO argumento\r\n" e devolve o codigo da resposta
+// manda o comando com \r\n no fim e le logo a resposta
 int sendCommand(int sockfd, const char *command, const char *arg, char *response) {
     char buf[2 * MAX_SIZE];
 
@@ -166,7 +158,7 @@ int sendCommand(int sockfd, const char *command, const char *arg, char *response
 }
 
 // 227 Entering Passive Mode (h1,h2,h3,h4,p1,p2)
-// ip = h1.h2.h3.h4 e porta = p1 * 256 + p2
+// porta = p1 * 256 + p2
 int parsePassive(const char *response, char *ip, int *port) {
     int h1, h2, h3, h4, p1, p2;
 
@@ -181,8 +173,7 @@ int parsePassive(const char *response, char *ip, int *port) {
     return 0;
 }
 
-// le da ligacao de dados ate o servidor a fechar e escreve tudo no ficheiro
-// devolve o numero de bytes recebidos
+// le da ligacao de dados e escreve no ficheiro ate o servidor fechar (read da 0)
 long saveFile(int sockfd, const char *filename) {
     FILE *file = fopen(filename, "wb");
     if (file == NULL) {
@@ -242,7 +233,7 @@ int main(int argc, char *argv[]) {
         exit(-1);
     }
 
-    // login - 331 pede a password, 230 login feito
+    // login, se o user nao precisar de password o servidor responde logo 230
     int code = sendCommand(control, "USER", url.user, response);
     if (code == 331)
         code = sendCommand(control, "PASS", url.password, response);
@@ -251,13 +242,13 @@ int main(int argc, char *argv[]) {
         exit(-1);
     }
 
-    // modo binario, para o ficheiro chegar igual ao original
+    // TYPE I e o modo binario
     if (sendCommand(control, "TYPE", "I", response) != 200) {
         printf("Error: could not set binary mode\n");
         exit(-1);
     }
 
-    // modo passivo - o servidor diz o ip e a porta para a ligacao de dados
+    // no modo passivo somos nos que ligamos ao servidor, ele diz o ip e a porta
     if (sendCommand(control, "PASV", NULL, response) != 227) {
         printf("Error: could not enter passive mode\n");
         exit(-1);
@@ -271,14 +262,14 @@ int main(int argc, char *argv[]) {
     }
     printf("Data connection: %s:%d\n", dataIp, dataPort);
 
-    // segunda ligacao TCP, so para o ficheiro
+    // ligacao de dados
     int data = connectSocket(dataIp, dataPort);
     if (data < 0) {
         printf("Error: could not open the data connection\n");
         exit(-1);
     }
 
-    // 150 (ou 125) - o servidor vai comecar a enviar o ficheiro
+    // o rebex responde 125 em vez de 150
     code = sendCommand(control, "RETR", url.path, response);
     if (code != 150 && code != 125) {
         printf("Error: could not retrieve %s\n", url.path);
@@ -290,11 +281,7 @@ int main(int argc, char *argv[]) {
         printf("Error: could not save %s\n", url.filename);
         exit(-1);
     }
-
-    if (close(data) < 0) {
-        perror("close()");
-        exit(-1);
-    }
+    close(data);
 
     // 226 - transferencia completa
     if (readResponse(control, response) != 226) {
@@ -302,7 +289,6 @@ int main(int argc, char *argv[]) {
         exit(-1);
     }
 
-    // 221 - fim da sessao
     sendCommand(control, "QUIT", NULL, response);
 
     if (close(control) < 0) {
