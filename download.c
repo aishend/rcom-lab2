@@ -146,6 +146,40 @@ int readResponse(int sockfd, char *response) {
     return atoi(response);
 }
 
+// envia "COMANDO argumento\r\n" e devolve o codigo da resposta
+int sendCommand(int sockfd, const char *command, const char *arg, char *response) {
+    char buf[2 * MAX_SIZE];
+
+    if (arg == NULL)
+        sprintf(buf, "%s\r\n", command);
+    else
+        sprintf(buf, "%s %s\r\n", command, arg);
+
+    printf("%s", buf);
+    if (write(sockfd, buf, strlen(buf)) < 0) {
+        perror("write()");
+        return -1;
+    }
+
+    return readResponse(sockfd, response);
+}
+
+// 227 Entering Passive Mode (h1,h2,h3,h4,p1,p2)
+// ip = h1.h2.h3.h4 e porta = p1 * 256 + p2
+int parsePassive(const char *response, char *ip, int *port) {
+    int h1, h2, h3, h4, p1, p2;
+
+    const char *start = strchr(response, '(');
+    if (start == NULL)
+        return -1;
+    if (sscanf(start, "(%d,%d,%d,%d,%d,%d)", &h1, &h2, &h3, &h4, &p1, &p2) != 6)
+        return -1;
+
+    sprintf(ip, "%d.%d.%d.%d", h1, h2, h3, h4);
+    *port = p1 * 256 + p2;
+    return 0;
+}
+
 int main(int argc, char *argv[]) {
     if (argc != 2) {
         fprintf(stderr, "Usage: %s ftp://[<user>:<password>@]<host>/<url-path>\n", argv[0]);
@@ -180,6 +214,35 @@ int main(int argc, char *argv[]) {
         printf("Error: server not ready\n");
         exit(-1);
     }
+
+    // login - 331 pede a password, 230 login feito
+    int code = sendCommand(control, "USER", url.user, response);
+    if (code == 331)
+        code = sendCommand(control, "PASS", url.password, response);
+    if (code != 230) {
+        printf("Error: login failed\n");
+        exit(-1);
+    }
+
+    // modo binario, para o ficheiro chegar igual ao original
+    if (sendCommand(control, "TYPE", "I", response) != 200) {
+        printf("Error: could not set binary mode\n");
+        exit(-1);
+    }
+
+    // modo passivo - o servidor diz o ip e a porta para a ligacao de dados
+    if (sendCommand(control, "PASV", NULL, response) != 227) {
+        printf("Error: could not enter passive mode\n");
+        exit(-1);
+    }
+
+    char dataIp[MAX_SIZE];
+    int dataPort;
+    if (parsePassive(response, dataIp, &dataPort) != 0) {
+        printf("Error: invalid passive mode response\n");
+        exit(-1);
+    }
+    printf("Data connection: %s:%d\n", dataIp, dataPort);
 
     if (close(control) < 0) {
         perror("close()");
