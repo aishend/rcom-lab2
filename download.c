@@ -15,6 +15,7 @@
 
 #define FTP_PORT 21
 #define MAX_SIZE 256
+#define BUF_SIZE 1024
 
 struct URL {
     char user[MAX_SIZE];
@@ -180,6 +181,32 @@ int parsePassive(const char *response, char *ip, int *port) {
     return 0;
 }
 
+// le da ligacao de dados ate o servidor a fechar e escreve tudo no ficheiro
+// devolve o numero de bytes recebidos
+long saveFile(int sockfd, const char *filename) {
+    FILE *file = fopen(filename, "wb");
+    if (file == NULL) {
+        perror("fopen()");
+        return -1;
+    }
+
+    char buf[BUF_SIZE];
+    long total = 0;
+    int bytes;
+    while ((bytes = read(sockfd, buf, BUF_SIZE)) > 0) {
+        fwrite(buf, 1, bytes, file);
+        total += bytes;
+    }
+
+    fclose(file);
+
+    if (bytes < 0) {
+        perror("read()");
+        return -1;
+    }
+    return total;
+}
+
 int main(int argc, char *argv[]) {
     if (argc != 2) {
         fprintf(stderr, "Usage: %s ftp://[<user>:<password>@]<host>/<url-path>\n", argv[0]);
@@ -244,10 +271,45 @@ int main(int argc, char *argv[]) {
     }
     printf("Data connection: %s:%d\n", dataIp, dataPort);
 
+    // segunda ligacao TCP, so para o ficheiro
+    int data = connectSocket(dataIp, dataPort);
+    if (data < 0) {
+        printf("Error: could not open the data connection\n");
+        exit(-1);
+    }
+
+    // 150 (ou 125) - o servidor vai comecar a enviar o ficheiro
+    code = sendCommand(control, "RETR", url.path, response);
+    if (code != 150 && code != 125) {
+        printf("Error: could not retrieve %s\n", url.path);
+        exit(-1);
+    }
+
+    long bytes = saveFile(data, url.filename);
+    if (bytes < 0) {
+        printf("Error: could not save %s\n", url.filename);
+        exit(-1);
+    }
+
+    if (close(data) < 0) {
+        perror("close()");
+        exit(-1);
+    }
+
+    // 226 - transferencia completa
+    if (readResponse(control, response) != 226) {
+        printf("Error: transfer not complete\n");
+        exit(-1);
+    }
+
+    // 221 - fim da sessao
+    sendCommand(control, "QUIT", NULL, response);
+
     if (close(control) < 0) {
         perror("close()");
         exit(-1);
     }
 
+    printf("File saved: %s (%ld bytes)\n", url.filename, bytes);
     return 0;
 }
