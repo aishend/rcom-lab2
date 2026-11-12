@@ -6,6 +6,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <netdb.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
 
 #define MAX_SIZE 256
 
@@ -63,6 +66,19 @@ int parseUrl(const char *input, struct URL *url) {
     return 0;
 }
 
+// do getip.c - descobre o ip do host pelo nome (DNS)
+int getIp(const char *host, char *ip) {
+    struct hostent *h;
+
+    if ((h = gethostbyname(host)) == NULL) {
+        herror("gethostbyname()");
+        return -1;
+    }
+
+    strcpy(ip, inet_ntoa(*((struct in_addr *) h->h_addr)));
+    return 0;
+}
+
 int main(int argc, char *argv[]) {
     if (argc != 2) {
         fprintf(stderr, "Usage: %s ftp://[<user>:<password>@]<host>/<url-path>\n", argv[0]);
@@ -75,11 +91,14 @@ int main(int argc, char *argv[]) {
         exit(-1);
     }
 
-    printf("User     : %s\n", url.user);
-    printf("Password : %s\n", url.password);
-    printf("Host     : %s\n", url.host);
-    printf("Path     : %s\n", url.path);
-    printf("File     : %s\n", url.filename);
+    char ip[MAX_SIZE];
+    if (getIp(url.host, ip) != 0) {
+        printf("Error: could not resolve host %s\n", url.host);
+        exit(-1);
+    }
+
+    printf("Host name  : %s\n", url.host);
+    printf("IP Address : %s\n", ip);
 
     return 0;
 }
