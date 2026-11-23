@@ -4,6 +4,14 @@
 #   ex.: bash reg.sh 1 ping -c 5 172.16.10.254
 #        bash reg.sh 1 sudo arp -d 172.16.10.254
 
+# os txt ficam sempre na pasta do script
+cd "$(dirname "$0")"
+
+if [ -z "$1" ]; then
+    echo "Usage: $0 <experiment number> <command>"
+    exit 1
+fi
+
 EXP=$1
 shift
 FICHEIRO=exp${EXP}_$(hostname).txt

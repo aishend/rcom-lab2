@@ -2,6 +2,14 @@
 # Configuracao do tuxY2 (so entra a partir da exp 2), fica tudo registado no exp<N>_<tux>.txt
 # Uso (dentro da pasta rede): sudo bash tux2.sh <experiencia>
 
+# corremos sempre a partir da pasta do script, para encontrar o reg.sh
+cd "$(dirname "$0")"
+
+if [ -z "$1" ]; then
+    echo "Usage: $0 <experiment number>"
+    exit 1
+fi
+
 EXP=$1
 REDE0=172.16.10
 REDE1=172.16.11
