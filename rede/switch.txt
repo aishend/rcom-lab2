@@ -1,0 +1,32 @@
+Switch (GTKTerm, /dev/ttyS0, 115200, admin sem password)
+
+Cabos que usamos no switch:
+  ether1 - tuxY3 E1 (patch panel 16)
+  ether2 - tuxY4 E1 (patch panel 19)
+  ether3 - tuxY2 E1 (patch panel 13)
+  ether4 - tuxY4 E2 (patch panel 20)
+  ether5 - RC ether2
+
+Reset
+/system reset-configuration
+
+Exp 2
+/interface bridge add name=bridge10
+/interface bridge add name=bridge11
+/interface bridge port remove [find interface=ether1]
+/interface bridge port remove [find interface=ether2]
+/interface bridge port remove [find interface=ether3]
+/interface bridge port add bridge=bridge10 interface=ether1
+/interface bridge port add bridge=bridge10 interface=ether2
+/interface bridge port add bridge=bridge11 interface=ether3
+
+Exp 3
+/interface bridge port remove [find interface=ether4]
+/interface bridge port add bridge=bridge11 interface=ether4
+
+Exp 4
+/interface bridge port remove [find interface=ether5]
+/interface bridge port add bridge=bridge11 interface=ether5
+
+Ver como ficou
+/interface bridge port print brief

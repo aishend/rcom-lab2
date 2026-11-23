@@ -1,0 +1,24 @@
+Router RC (GTKTerm, /dev/ttyS0, 115200, admin sem password)
+
+Cabos:
+  ether1 - rede do lab (patch panel 23 ou 24)
+  ether2 - switch ether5 (bridge11)
+
+Reset
+/system reset-configuration
+
+Exp 4
+/ip address add address=172.16.1.19/24 interface=ether1
+/ip address add address=172.16.11.254/24 interface=ether2
+/ip route add dst-address=0.0.0.0/0 gateway=172.16.1.254
+/ip route add dst-address=172.16.10.0/24 gateway=172.16.11.253
+/ip firewall nat add chain=srcnat action=masquerade out-interface=ether1
+
+Desligar e voltar a ligar o NAT (exp 4, passos 6 e 7)
+/ip firewall nat print
+/ip firewall nat disable 0
+/ip firewall nat enable 0
+
+Ver como ficou
+/ip address print
+/ip route print
